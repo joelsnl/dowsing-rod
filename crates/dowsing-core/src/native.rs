@@ -93,20 +93,32 @@ fn recover_verilog_outline(source: &str, path: &Path, language: Language) -> Fil
         .collect();
     let mut result = FileAnalysis::default();
     let mut class_scopes = Vec::new();
+    let mut in_macro = false;
+    let mut in_block_comment = false;
     let mut line_index = 0;
 
     while line_index < lines.len() {
         let (start_byte, line) = lines[line_index];
-        let stripped = strip_verilog_line(line);
-        if let Some(name) = class_name(stripped) {
+        let trimmed = line.trim_start();
+        if in_macro || trimmed.starts_with('`') {
+            in_macro = trimmed.trim_end().ends_with('\\');
+            line_index += 1;
+            continue;
+        }
+        let stripped = strip_verilog_line(line, &mut in_block_comment);
+        if stripped.is_empty() {
+            line_index += 1;
+            continue;
+        }
+        if let Some(name) = class_name(&stripped) {
             class_scopes.push(name.to_string());
         }
-        if starts_word(stripped, "endclass") {
+        if starts_word(&stripped, "endclass") {
             class_scopes.pop();
         }
 
-        if let Some(kind) = subroutine_kind(stripped) {
-            let name = subroutine_name(stripped).unwrap_or_else(|| {
+        if let Some(kind) = subroutine_kind(&stripped) {
+            let name = subroutine_name(&stripped).unwrap_or_else(|| {
                 format!(
                     "{}@{}",
                     if kind == FunctionKind::Task {
@@ -122,7 +134,12 @@ fn recover_verilog_outline(source: &str, path: &Path, language: Language) -> Fil
             } else {
                 "endfunction"
             };
-            let end_index = find_verilog_end(&lines, line_index, closing).unwrap_or(line_index);
+            let Some(end_index) = find_verilog_end(&lines, line_index, closing) else {
+                // DPI imports, extern declarations, and prototypes have no
+                // local body to inventory.
+                line_index += 1;
+                continue;
+            };
             result.functions.push(recovered_info(
                 path,
                 language,
@@ -138,7 +155,7 @@ fn recover_verilog_outline(source: &str, path: &Path, language: Language) -> Fil
             continue;
         }
 
-        if let Some(kind) = procedural_kind(stripped) {
+        if let Some(kind) = procedural_kind(&stripped) {
             result.functions.push(recovered_info(
                 path,
                 language,
@@ -156,10 +173,41 @@ fn recover_verilog_outline(source: &str, path: &Path, language: Language) -> Fil
     result
 }
 
-fn strip_verilog_line(line: &str) -> &str {
-    line.split_once("//")
-        .map_or(line, |(content, _)| content)
-        .trim_start()
+fn strip_verilog_line(line: &str, in_block_comment: &mut bool) -> String {
+    let mut code = String::with_capacity(line.len());
+    let mut remaining = line;
+    while !remaining.is_empty() {
+        if *in_block_comment {
+            let Some(end) = remaining.find("*/") else {
+                break;
+            };
+            *in_block_comment = false;
+            remaining = &remaining[end + 2..];
+            continue;
+        }
+        let block = remaining.find("/*");
+        let line_comment = remaining.find("//");
+        match (block, line_comment) {
+            (None, Some(line_comment)) => {
+                code.push_str(&remaining[..line_comment]);
+                break;
+            }
+            (Some(block), Some(line_comment)) if line_comment < block => {
+                code.push_str(&remaining[..line_comment]);
+                break;
+            }
+            (Some(block), _) => {
+                code.push_str(&remaining[..block]);
+                *in_block_comment = true;
+                remaining = &remaining[block + 2..];
+            }
+            (None, None) => {
+                code.push_str(remaining);
+                break;
+            }
+        }
+    }
+    code.trim_start().to_string()
 }
 
 fn starts_word(line: &str, word: &str) -> bool {
@@ -229,13 +277,23 @@ fn procedural_kind(line: &str) -> Option<FunctionKind> {
 }
 
 fn find_verilog_end(lines: &[(usize, &str)], start: usize, ending: &str) -> Option<usize> {
-    lines
-        .iter()
-        .enumerate()
-        .skip(start + 1)
-        .find_map(|(index, (_, line))| {
-            starts_word(strip_verilog_line(line), ending).then_some(index)
-        })
+    let mut in_macro = false;
+    let mut in_block_comment = false;
+    for (index, (_, line)) in lines.iter().enumerate().skip(start + 1) {
+        let trimmed = line.trim_start();
+        if in_macro || trimmed.starts_with('`') {
+            in_macro = trimmed.trim_end().ends_with('\\');
+            continue;
+        }
+        let stripped = strip_verilog_line(line, &mut in_block_comment);
+        if starts_word(&stripped, ending) {
+            return Some(index);
+        }
+        if subroutine_kind(&stripped).is_some() {
+            return None;
+        }
+    }
+    None
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1177,7 +1235,7 @@ mod tests {
         for (extension, source) in [
             (
                 "svh",
-                "class item; virtual task drive(); `uvm_info(\"I\", \"go\", UVM_LOW) endtask endclass",
+                "class item;\nvirtual task drive();\n`uvm_info(\"I\", \"go\", UVM_LOW)\nendtask\nendclass",
             ),
             (
                 "vhd",
@@ -1193,6 +1251,21 @@ mod tests {
                 .iter()
                 .all(|function| function.parser_recovered));
         }
+    }
+
+    #[test]
+    fn recovered_systemverilog_skips_macros_and_dpi_declarations() {
+        let source = r#"`define DECLARE_HELPER \
+function void generated(); endfunction
+import "DPI-C" function void foreign_call();
+function void local_helper();
+endfunction
+"#;
+        let result = run(source, "sv", NormalizationLevel::Balanced);
+        assert!(result.parse_errors.is_empty());
+        assert_eq!(result.functions.len(), 1);
+        assert_eq!(result.functions[0].function_name, "local_helper");
+        assert!(result.functions[0].parser_recovered);
     }
     #[test]
     fn nested_bodies_do_not_pollute_parent_calls() {

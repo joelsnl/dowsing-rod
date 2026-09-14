@@ -69,9 +69,13 @@ pub fn discover_source_files(
         }
     }
 
-    // Add user-specified inclusions (these override exclusions)
+    // Add user-specified inclusions. A directory pattern must include its
+    // descendants or the override engine will not yield its source files.
     for incl in extra_includes {
         overrides.add(incl)?;
+        if !incl.ends_with("/**") && !incl.contains('*') {
+            overrides.add(&format!("{incl}/**"))?;
+        }
     }
 
     builder.overrides(overrides.build()?);
@@ -151,5 +155,21 @@ mod tests {
 
         let files = discover_python_files(root, &["generated".to_string()], &[]).unwrap();
         assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn test_multiple_directory_includes_select_their_descendants() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        for directory in ["rtl", "tb", "other"] {
+            fs::create_dir_all(root.join(directory)).unwrap();
+            fs::write(root.join(directory).join("unit.ts"), "function unit() {}").unwrap();
+        }
+
+        let files = discover_source_files(root, &[], &["rtl".into(), "tb".into()]).unwrap();
+        assert_eq!(files.len(), 2);
+        assert!(files
+            .iter()
+            .all(|path| path.starts_with(root.join("rtl")) || path.starts_with(root.join("tb"))));
     }
 }

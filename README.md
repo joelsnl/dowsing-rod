@@ -156,10 +156,16 @@ Scan options:
 --max-tokens N               Token budget for AI output
 --normalization LEVEL        strict, balanced, or aggressive
 --jobs N                     Rayon worker thread count
---exclude PATTERN            Additional ignore pattern, repeatable
---include PATTERN            Inclusion override, repeatable
+--exclude PATTERN...         Additional ignore patterns, space- or comma-separated
+--include PATTERN...         Inclusion overrides, space- or comma-separated
 --no-cache                   Disable the file analysis cache
 --fail-on-error              Return an error when any file fails to parse
+```
+
+For several source areas, use either form:
+
+```bash
+dowsing-rod scan . --include rtl tb uvm --exclude vendor,generated
 ```
 
 ## Python API
@@ -225,7 +231,7 @@ render human, AI, JSON, or JSONL output
 
 Normalization is deliberately semantic enough to avoid the most obvious false positives. Calls, member access, operators, control flow, literals, parameter shape, and complexity all contribute to the score. Clusters are isolated by language; JavaScript and TypeScript are separate languages.
 
-HDL is discovery-only. The scanner extracts `always`/`process` blocks, functions, tasks, and procedures, but emits no HDL refactoring clusters. It does not model clock domains, reset trees, widths, elaboration, resource mapping, timing, or simulation semantics. If the embedded grammar cannot represent a Verilog, SystemVerilog, or VHDL file, Dowsing Rod records a declaration outline instead; recovered units are never normalized, scored, or clustered. Use your simulator, linter, or synthesizer for HDL syntax and semantic validation.
+HDL is discovery-only. The scanner extracts `always`/`process` blocks, functions, tasks, and procedures, but emits no HDL refactoring clusters. It does not model clock domains, reset trees, widths, elaboration, resource mapping, timing, or simulation semantics. If the embedded grammar cannot represent a Verilog, SystemVerilog, or VHDL file, Dowsing Rod records local declarations as an outline; macro expansions and foreign DPI declarations are omitted. Recovered units are never normalized, scored, or clustered. Use your simulator, linter, or synthesizer for HDL syntax and semantic validation.
 
 See [docs/algorithms.md](docs/algorithms.md) for implementation details.
 

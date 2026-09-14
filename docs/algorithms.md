@@ -44,7 +44,7 @@ The ambiguous `.h` extension is parsed as both C and C++ when necessary; the fro
 
 ## Parsing
 
-Python uses `rustpython-parser`; JavaScript, TypeScript, C, C++, C#, Verilog/SystemVerilog, and VHDL use embedded Tree-sitter grammars. No compiler, language server, service, or runtime grammar download is required. Parse failures are converted into `ParseError` values with file, row, column, and parser message. The scanner normally keeps going when a file fails to parse. With `fail_on_error = true`, the core API returns an error after collecting parse errors. HDL grammar failures produce a declaration outline for discovery instead of a syntax diagnostic; the tool does not replace an HDL compiler, linter, simulator, or synthesizer.
+Python uses `rustpython-parser`; JavaScript, TypeScript, C, C++, C#, Verilog/SystemVerilog, and VHDL use embedded Tree-sitter grammars. No compiler, language server, service, or runtime grammar download is required. Parse failures are converted into `ParseError` values with file, row, column, and parser message. The scanner normally keeps going when a file fails to parse. With `fail_on_error = true`, the core API returns an error after collecting parse errors. HDL grammar failures produce an outline of local declarations for discovery instead of a syntax diagnostic; macro expansions and foreign DPI declarations are omitted. The tool does not replace an HDL compiler, linter, simulator, or synthesizer.
 
 ## Extraction
 
