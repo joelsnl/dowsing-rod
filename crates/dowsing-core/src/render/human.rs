@@ -195,16 +195,12 @@ pub fn render<W: Write>(result: &ScanResult, writer: &mut W) -> std::io::Result<
         )?;
 
         // Estimates
-        if cluster.classification == crate::types::RefactoringClassification::HdlReviewRequired {
-            writeln!(writer, "    Manual review only; no reduction estimate.")?;
-        } else {
-            writeln!(
-                writer,
-                "    Duplicated tokens: ~{}  |  Potential reduction: ~{}",
-                format_number(cluster.duplicated_tokens_estimate),
-                format_number(cluster.potential_reduction_estimate),
-            )?;
-        }
+        writeln!(
+            writer,
+            "    Duplicated tokens: ~{}  |  Potential reduction: ~{}",
+            format_number(cluster.duplicated_tokens_estimate),
+            format_number(cluster.potential_reduction_estimate),
+        )?;
 
         // Reason
         writeln!(writer)?;

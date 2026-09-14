@@ -64,7 +64,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: nuget-native-${{ matrix.rid }}
-          path: dist/nuget-native/${{ matrix.rid }}
+          path: dist/nuget-native
           if-no-files-found: error
 
   package:
